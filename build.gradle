@@ -11,23 +11,19 @@ java {
 
 repositories {
     mavenCentral()
-    maven { url "https://repo.spring.io/milestone" }
 }
 
 ext {
-    set("springCloudVersion", "2023.0.0-RC1")
+    set("resilience4jVersion", "2.1.0")
 }
 
 dependencies {
-    implementation "org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j"
-    annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
-    testImplementation "org.springframework.boot:spring-boot-starter-test"
-}
+    // ~ resilience4j
+    implementation "io.github.resilience4j:resilience4j-circuitbreaker:${resilience4jVersion}"
 
-dependencyManagement {
-    imports {
-        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
-    }
+    implementation "io.vavr:vavr:0.10.4" // Try
+
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
 }
 
 tasks.named("test") {
