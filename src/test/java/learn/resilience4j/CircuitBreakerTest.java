@@ -8,10 +8,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import io.github.resilience4j.core.registry.EntryAddedEvent;
-import io.github.resilience4j.core.registry.EntryRemovedEvent;
-import io.github.resilience4j.core.registry.EntryReplacedEvent;
-import io.github.resilience4j.core.registry.RegistryEventConsumer;
 import io.vavr.control.Try;
 import java.io.IOException;
 import java.time.Duration;
@@ -24,23 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 @Slf4j
-class CircuitBreakerTest {
-
-    RegistryEventConsumer<CircuitBreaker> circuitBreakerRegistryEventConsumer = new RegistryEventConsumer<>() {
-
-        @Override
-        public void onEntryAddedEvent(EntryAddedEvent<CircuitBreaker> entryAddedEvent) {
-            entryAddedEvent.getAddedEntry().getEventPublisher().onEvent(event -> log.info("{}", event));
-        }
-
-        @Override
-        public void onEntryRemovedEvent(EntryRemovedEvent<CircuitBreaker> entryRemoveEvent) {
-        }
-
-        @Override
-        public void onEntryReplacedEvent(EntryReplacedEvent<CircuitBreaker> entryReplacedEvent) {
-        }
-    };
+class CircuitBreakerTest extends AbstractCircuitBreakerTest {
 
     ExternalService externalService = new ExternalService();
 
@@ -49,7 +29,7 @@ class CircuitBreakerTest {
     void t1() {
         // 기본 설정에 이벤트 핸들러만 등록
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.custom()
-                                                                              .addRegistryEventConsumer(circuitBreakerRegistryEventConsumer)
+                                                                              .addRegistryEventConsumer(getCircuitBreakerRegistryEventConsumer())
                                                                               .build();
 
         CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker("a"); // 서킷 브레이커는 이름을 가진다
@@ -58,14 +38,11 @@ class CircuitBreakerTest {
 
         // vavr 라이브러리의 Try를 사용하면 함수형 인터페이스를 사용해 Try-catch 블락을 대체할 수 있다
         Try<String> result = Try.ofSupplier(decoratedSupplier)
-                                .recover(throwable -> {
-                                    log.error("{}", throwable.getMessage());
-                                    return "Recovery";
-                                });
+                                .recover(throwable -> "Recovery");
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.get()).isEqualTo("Success");
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 0 ms
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED); // CircuitBreaker.State.CLOSED
+        assertHealthStatus(circuitBreaker, CLOSED); // CircuitBreaker.State.CLOSED
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(1); // 1개 호출 중
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1); // 성공 1개
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(0); // 실패 0개
@@ -75,7 +52,7 @@ class CircuitBreakerTest {
     @DisplayName("기본 설정. 원격 서비스 장애")
     void t2() {
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.custom()
-                                                                              .addRegistryEventConsumer(circuitBreakerRegistryEventConsumer)
+                                                                              .addRegistryEventConsumer(getCircuitBreakerRegistryEventConsumer())
                                                                               .build();
 
         CircuitBreaker circuitBreaker = circuitBreakerRegistry.circuitBreaker("a");
@@ -92,7 +69,7 @@ class CircuitBreakerTest {
 
         assertThat(result.get()).isEqualTo("Recovery");
         // CircuitBreaker 'a' recorded an error: 'java.lang.RuntimeException: Server fault'. Elapsed time: 0 ms
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(0);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
@@ -114,7 +91,7 @@ class CircuitBreakerTest {
         // 5번 호출되고 실패율 50% 이상이면 OPEN
 
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.custom()
-                                                                              .addRegistryEventConsumer(circuitBreakerRegistryEventConsumer)
+                                                                              .addRegistryEventConsumer(getCircuitBreakerRegistryEventConsumer())
                                                                               .withCircuitBreakerConfig(circuitBreakerConfig)
                                                                               .build();
 
@@ -125,7 +102,7 @@ class CircuitBreakerTest {
 
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F); // 최소 요청수를 충족하지 않으면 실패율 계산을 하지 않음
         // 실패율: 0%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(0);
@@ -133,7 +110,7 @@ class CircuitBreakerTest {
         assertCallFailure(circuitBreaker);
         // CircuitBreaker 'a' recorded an error: 'java.lang.RuntimeException: Server fault'. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F); // 실패율: 50%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
@@ -141,7 +118,7 @@ class CircuitBreakerTest {
         assertCallFailure(circuitBreaker);
         // CircuitBreaker 'a' recorded an error: 'java.lang.RuntimeException: Server fault'. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F); // 실패율: 67%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(3);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(2);
@@ -149,7 +126,7 @@ class CircuitBreakerTest {
         assertCallFailure(circuitBreaker);
         // CircuitBreaker 'a' recorded an error: 'java.lang.RuntimeException: Server fault'. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F); // 실패율: 75%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(4);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(3);
@@ -159,7 +136,7 @@ class CircuitBreakerTest {
         // CircuitBreaker 'a' exceeded failure rate threshold. Current failure rate: 80.0
         // CircuitBreaker 'a' changed state from CLOSED to OPEN
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(80.0F);
-        assertThat(circuitBreaker.getState()).isEqualTo(OPEN);
+        assertHealthStatus(circuitBreaker, OPEN);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(5);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(4);
@@ -180,7 +157,7 @@ class CircuitBreakerTest {
         // 5번 호출되고 느린 비율이 50% 이상이면 OPEN
 
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.custom()
-                                                                              .addRegistryEventConsumer(circuitBreakerRegistryEventConsumer)
+                                                                              .addRegistryEventConsumer(getCircuitBreakerRegistryEventConsumer())
                                                                               .withCircuitBreakerConfig(circuitBreakerConfig)
                                                                               .build();
 
@@ -189,7 +166,7 @@ class CircuitBreakerTest {
         assertCallSuccess(circuitBreaker);
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getSlowCallRate()).isEqualTo(-1.0F); // 느린 비율: 0%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowCalls()).isEqualTo(0);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowSuccessfulCalls()).isEqualTo(0);
@@ -198,7 +175,7 @@ class CircuitBreakerTest {
         assertThat(callSlowly(circuitBreaker)).isEqualTo("Slowness");
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 3000 ms
         assertThat(circuitBreaker.getMetrics().getSlowCallRate()).isEqualTo(-1.0F); // 느린 비율: 50%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowSuccessfulCalls()).isEqualTo(1);
@@ -207,7 +184,7 @@ class CircuitBreakerTest {
         assertCallSuccess(circuitBreaker);
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getSlowCallRate()).isEqualTo(-1.0F); // 느린 비율: 33%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(3);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowSuccessfulCalls()).isEqualTo(1);
@@ -216,7 +193,7 @@ class CircuitBreakerTest {
         assertThat(callSlowly(circuitBreaker)).isEqualTo("Slowness");
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 3002 ms
         assertThat(circuitBreaker.getMetrics().getSlowCallRate()).isEqualTo(-1.0F); // 느린 비율: 50%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(4);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowSuccessfulCalls()).isEqualTo(2);
@@ -227,7 +204,7 @@ class CircuitBreakerTest {
         // CircuitBreaker 'a' exceeded slow call rate threshold. Current slow call rate: 60.0
         // CircuitBreaker 'a' changed state from CLOSED to OPEN
         assertThat(circuitBreaker.getMetrics().getSlowCallRate()).isEqualTo(60.0F);
-        assertThat(circuitBreaker.getState()).isEqualTo(OPEN);
+        assertHealthStatus(circuitBreaker, OPEN);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(5);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowCalls()).isEqualTo(3);
         assertThat(circuitBreaker.getMetrics().getNumberOfSlowSuccessfulCalls()).isEqualTo(3);
@@ -250,7 +227,7 @@ class CircuitBreakerTest {
         // OPEN되었다가 HALF_OPEN로 전환되는 타임아웃은 10초이고, HALF_OPEN일 때 OPEN/CLOSE 전환 여부를 호출 2번으로 판단하겠다
 
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.custom()
-                                                                              .addRegistryEventConsumer(circuitBreakerRegistryEventConsumer)
+                                                                              .addRegistryEventConsumer(getCircuitBreakerRegistryEventConsumer())
                                                                               .withCircuitBreakerConfig(circuitBreakerConfig)
                                                                               .build();
 
@@ -258,16 +235,16 @@ class CircuitBreakerTest {
 
         circuitBreaker.transitionToOpenState();
         // CircuitBreaker 'a' changed state from CLOSED to OPEN
-        assertThat(circuitBreaker.getState()).isEqualTo(OPEN);
+        assertHealthStatus(circuitBreaker, OPEN);
 
         Thread.sleep(1_000);
         // CircuitBreaker 'a' changed state from OPEN to HALF_OPEN
-        assertThat(circuitBreaker.getState()).isEqualTo(HALF_OPEN);
+        assertHealthStatus(circuitBreaker, HALF_OPEN);
 
         assertCallFailure(circuitBreaker);
         // CircuitBreaker 'a' recorded an error: 'java.lang.RuntimeException: Server fault'. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F); // 실패율: 0%
-        assertThat(circuitBreaker.getState()).isEqualTo(HALF_OPEN);
+        assertHealthStatus(circuitBreaker, HALF_OPEN);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(0);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
@@ -276,7 +253,7 @@ class CircuitBreakerTest {
         // CircuitBreaker 'a' recorded an error: 'java.lang.RuntimeException: Server fault'. Elapsed time: 0 ms
         // CircuitBreaker 'a' changed state from HALF_OPEN to OPEN
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(100.0F);
-        assertThat(circuitBreaker.getState()).isEqualTo(OPEN);
+        assertHealthStatus(circuitBreaker, OPEN);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(0);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(2);
@@ -299,7 +276,7 @@ class CircuitBreakerTest {
         // 최소 2번 호출되고 실패율 25% 이상이고 IOException, BusinessException일 때 실패 기록. OtherBusinessException은 성공/실패 계산에 영향을 미치지 않음
 
         CircuitBreakerRegistry circuitBreakerRegistry = CircuitBreakerRegistry.custom()
-                                                                              .addRegistryEventConsumer(circuitBreakerRegistryEventConsumer)
+                                                                              .addRegistryEventConsumer(getCircuitBreakerRegistryEventConsumer())
                                                                               .withCircuitBreakerConfig(circuitBreakerConfig)
                                                                               .build();
 
@@ -309,7 +286,7 @@ class CircuitBreakerTest {
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 0 ms
         // -> RuntimeException이 발생하여 실패로 기록되지 않음
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F); // 실패율: 0%
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(0);
@@ -317,7 +294,7 @@ class CircuitBreakerTest {
         assertCallFailure(circuitBreaker);
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(0.0F); // 최소 요청수 충족되어 0으로 제대로 표시됨
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(0);
@@ -327,7 +304,7 @@ class CircuitBreakerTest {
                       .get()).isEqualTo("Recovery");
         // CircuitBreaker 'a' recorded an error which has been ignored: 'learn.resilience4j.exception.OtherBusinessException'. Elapsed time: 0 ms
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(0.0F); // OtherBusinessException은 실패율에 영향을 미치지 않음
-        assertThat(circuitBreaker.getState()).isEqualTo(CLOSED);
+        assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(2); // 무시하는 예외 발생으로 수를 세지 않음
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(0);
@@ -339,7 +316,7 @@ class CircuitBreakerTest {
         // CircuitBreaker 'a' exceeded failure rate threshold. Current failure rate: 33.333332
         // CircuitBreaker 'a' changed state from CLOSED to OPEN
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(33.333332F);
-        assertThat(circuitBreaker.getState()).isEqualTo(OPEN);
+        assertHealthStatus(circuitBreaker, OPEN);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(3);
         assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(2);
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
@@ -352,7 +329,6 @@ class CircuitBreakerTest {
         String result = Try.ofSupplier(decoratedSupplier)
                            .recover(throwable -> "Recovery")
                            .get();
-
         assertThat(result).isEqualTo("Success");
     }
 
@@ -363,7 +339,6 @@ class CircuitBreakerTest {
         String result = Try.ofSupplier(decoratedSupplier)
                            .recover(throwable -> "Recovery")
                            .get();
-
         assertThat(result).isEqualTo("Recovery");
     }
 
