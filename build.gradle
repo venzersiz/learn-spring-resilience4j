@@ -20,6 +20,7 @@ ext {
 dependencies {
     // ~ resilience4j
     implementation "io.github.resilience4j:resilience4j-circuitbreaker:${resilience4jVersion}"
+    implementation "io.github.resilience4j:resilience4j-retry:${resilience4jVersion}"
 
     implementation "io.vavr:vavr:0.10.4" // Try
 
