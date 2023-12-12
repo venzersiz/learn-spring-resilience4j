@@ -22,3 +22,21 @@ resilience4j:
       serverC:
         # base-config: default? ???? ?? ???
         minimum-number-of-calls: 3
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - java.util.concurrent.TimeoutException
+          - java.io.IOException
+        ignore-exceptions:
+          - learn.resilience4j.exception.BusinessException
+    instances:
+      serverA:
+        base-config: default
+      serverB:
+        base-config: default
+      serverC:
+        max-attempts: 2
