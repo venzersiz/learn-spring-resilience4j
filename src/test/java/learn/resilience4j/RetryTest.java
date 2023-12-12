@@ -31,10 +31,10 @@ class RetryTest extends AbstractCircuitBreakerTest {
         Retry retry = retryRegistry.retry("b");
 
         assertCallSuccess(retry);
-        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithoutRetryAttempt()).isEqualTo(1);
-        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithRetryAttempt()).isEqualTo(0);
-        assertThat(retry.getMetrics().getNumberOfFailedCallsWithoutRetryAttempt()).isEqualTo(0);
-        assertThat(retry.getMetrics().getNumberOfFailedCallsWithRetryAttempt()).isEqualTo(0);
+        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithoutRetryAttempt()).isOne();
+        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithRetryAttempt()).isZero();
+        assertThat(retry.getMetrics().getNumberOfFailedCallsWithoutRetryAttempt()).isZero();
+        assertThat(retry.getMetrics().getNumberOfFailedCallsWithRetryAttempt()).isZero();
     }
 
     @Test
@@ -53,10 +53,11 @@ class RetryTest extends AbstractCircuitBreakerTest {
         // Retry 'b', waiting PT0.5S until attempt '1'. Last attempt failed with exception 'java.lang.RuntimeException: Server fault'.
         // Retry 'b', waiting PT0.5S until attempt '2'. Last attempt failed with exception 'java.lang.RuntimeException: Server fault'.
         // Retry 'b' recorded a failed retry attempt. Number of retry attempts: '3'. Giving up. Last exception was: 'java.lang.RuntimeException: Server fault'.
-        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithoutRetryAttempt()).isEqualTo(0);
-        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithRetryAttempt()).isEqualTo(0);
-        assertThat(retry.getMetrics().getNumberOfFailedCallsWithoutRetryAttempt()).isEqualTo(0);
-        assertThat(retry.getMetrics().getNumberOfFailedCallsWithRetryAttempt()).isEqualTo(1);
+        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithoutRetryAttempt()).isZero();
+        assertThat(retry.getMetrics().getNumberOfSuccessfulCallsWithRetryAttempt()).isZero();
+        assertThat(retry.getMetrics().getNumberOfFailedCallsWithoutRetryAttempt()).isZero();
+        assertThat(retry.getMetrics().getNumberOfFailedCallsWithRetryAttempt()).isOne(); // Returns the number of failed calls after all retry attempts.
+        // 3회 Retry 이후 Circuit Breaker에 1회 실패로 기록해서 1인가?
     }
 
     private void assertCallSuccess(Retry retry) {

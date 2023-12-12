@@ -50,9 +50,9 @@ class CircuitBreakerWithRetryTest extends AbstractCircuitBreakerTest {
         assertCallSuccess(circuitBreaker, retry);
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F);
         assertHealthStatus(circuitBreaker, CLOSED);
-        assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(1);
-        assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(1);
-        assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(0);
+        assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isOne();
+        assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isOne();
+        assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isZero();
         // CircuitBreaker 'a' recorded a successful call. Elapsed time: 0 ms
     }
 
@@ -91,7 +91,7 @@ class CircuitBreakerWithRetryTest extends AbstractCircuitBreakerTest {
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(-1.0F);
         assertHealthStatus(circuitBreaker, CLOSED);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(3);
-        assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(0);
+        assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isZero();
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(3);
 
         assertCallFailure(circuitBreaker, retry);
@@ -107,7 +107,7 @@ class CircuitBreakerWithRetryTest extends AbstractCircuitBreakerTest {
         assertThat(circuitBreaker.getMetrics().getFailureRate()).isEqualTo(100.0F);
         assertHealthStatus(circuitBreaker, OPEN);
         assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isEqualTo(5);
-        assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isEqualTo(0);
+        assertThat(circuitBreaker.getMetrics().getNumberOfSuccessfulCalls()).isZero();
         assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(5);
         // -> 호출 중간에 OPEN되면 Retry 횟수가 남아도 재시도
 
