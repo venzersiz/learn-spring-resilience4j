@@ -1,1 +1,24 @@
+logging:
+  level:
+    root: info
+    io.github.resilience4j.circuitbreaker.internal.CircuitBreakerStateMachine: debug
 
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        failure-rate-threshold: 50
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        record-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - java.util.concurrent.TimeoutException
+          - java.io.IOException
+        ignore-exceptions:
+          - learn.resilience4j.exception.BusinessException
+    instances:
+      serverA:
+        base-config: default
+      serverC:
+        # base-config: default? ???? ?? ???
+        minimum-number-of-calls: 3
